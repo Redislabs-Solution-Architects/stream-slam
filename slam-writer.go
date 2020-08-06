@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/pborman/getopt/v2"
 	"math/rand"
 	"net"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/pborman/getopt/v2"
 )
 
 var rHost string
@@ -30,7 +30,6 @@ func worker(id int, jobs <-chan int, results chan<- string, redisClient *redis.C
 			MaxLen: int64(maxlen),
 			Values: map[string]interface{}{"job": id, "message": j},
 		}).Result()
-		fmt.Println(j)
 		errHndlr(err)
 		results <- id
 	}
@@ -57,18 +56,18 @@ func main() {
 
 	helpFlag := getopt.BoolLong("help", 'h', "display help")
 
-	redisHost := getopt.StringLong("host", "s", "localhost", "Redis Host")
-	redisPassword := getopt.StringLong("password", "a", "", "Redis Password")
-	streamPrefix := getopt.StringLong("stream-prefix", "x", "stream-slam", "the prefix of the streams created")
+	redisHost := getopt.StringLong("host", 's', "localhost", "Redis Host")
+	redisPassword := getopt.StringLong("password", 'a', "", "Redis Password")
+	streamPrefix := getopt.StringLong("stream-prefix", 'x', "stream-slam", "the prefix of the streams created")
 
-	redisPort := getopt.IntVarLong("port", "p", 6379, "Redis Port")
-	messageCount := getopt.IntVarLong("message-count", "c", 100000, "run this man times")
-	maxlen := getopt.IntVarLong("max-length", "l", 0, "the capped length of a queue")
-	threadCount := getopt.IntVarLong("threads", "t", 10, "run this many threads")
+	redisPort := getopt.IntLong("port", 'p', 6379, "Redis Port")
+	messageCount := getopt.IntLong("message-count", 'c', 100000, "run this man times")
+	maxlen := getopt.IntLong("max-length", 'l', 0, "the capped length of a queue")
+	threadCount := getopt.IntLong("threads", 't', 10, "run this many threads")
 
 	getopt.Parse()
 
-	if *helpFlag || *configfile == "" {
+	if *helpFlag {
 		getopt.PrintUsage(os.Stderr)
 		os.Exit(1)
 	}
