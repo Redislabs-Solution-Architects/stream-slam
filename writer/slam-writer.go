@@ -1,58 +1,36 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"math/rand"
-	"net"
+	"log"
 	"os"
-	"sort"
 	"time"
 
-	"github.com/go-redis/redis"
+	utils "github.com/Redislabs-Solution-Architects/stream-slam/util"
+	"github.com/go-redis/redis/v8"
 	"github.com/pborman/getopt/v2"
 )
 
-var rHost string
-var rPort int
-
-func errHndlr(err error) {
-	if err != nil {
-		fmt.Println("error:", err)
-		os.Exit(1)
-	}
-}
-
-func worker(id int, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string) {
+func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string) {
+	log.Printf("Starting writer worker: %d\n", id)
 	for j := range jobs {
-		id, err := redisClient.XAdd(&redis.XAddArgs{
-			Stream: fmt.Sprintf("%s-%d", streamPrefix, id),
-			MaxLen: int64(maxlen),
-			Values: map[string]interface{}{"job": id, "message": j},
-		}).Result()
-		errHndlr(err)
+		id, err := redisClient.XAdd(ctx,
+			&redis.XAddArgs{
+				Stream: fmt.Sprintf("%s-%d", streamPrefix, id),
+				MaxLen: int64(maxlen),
+				Values: map[string]interface{}{"job": id, "message": j},
+			}).Result()
+		if err != nil {
+			log.Printf("ERROR: %s\n", err)
+		}
 		results <- id
 	}
 }
 
-//func randomDialer(redisHost string, redisPort int) (net.Conn, error) {
-func randomDialer() (net.Conn, error) {
-	ips, reserr := net.LookupIP(rHost)
-	if reserr != nil {
-		return nil, reserr
-	}
-
-	sort.Slice(ips, func(i, j int) bool {
-		return bytes.Compare(ips[i], ips[j]) < 0
-	})
-
-	n := rand.Int() % len(ips)
-
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", ips[n], rPort))
-	return conn, err
-}
-
 func main() {
+
+	var ctx = context.Background()
 
 	helpFlag := getopt.BoolLong("help", 'h', "display help")
 
@@ -60,10 +38,10 @@ func main() {
 	redisPassword := getopt.StringLong("password", 'a', "", "Redis Password")
 	streamPrefix := getopt.StringLong("stream-prefix", 'x', "stream-slam", "the prefix of the streams created")
 
-	redisPort := getopt.IntLong("port", 'p', 6379, "Redis Port")
+	redisPort := getopt.StringLong("port", 'p', "6379", "Redis Port")
 	messageCount := getopt.IntLong("message-count", 'c', 100000, "run this man times")
 	maxlen := getopt.IntLong("max-length", 'l', 0, "the capped length of a queue")
-	threadCount := getopt.IntLong("threads", 't', 10, "run this many threads")
+	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
 
 	getopt.Parse()
 
@@ -72,8 +50,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	rHost = *redisHost
-	rPort = *redisPort
+	ctx = context.WithValue(ctx, "host", *redisHost)
+	ctx = context.WithValue(ctx, "port", *redisPort)
 
 	if *maxlen == 0 {
 		// throw in an extra 10 for good measure
@@ -81,7 +59,7 @@ func main() {
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Dialer:          randomDialer, // Randomly pick an IP address from the list of ips retruned
+		Dialer:          utils.RandomDialer, // Randomly pick an IP address from the list of ips retruned
 		Password:        *redisPassword,
 		DB:              0,
 		MinIdleConns:    1,                    // make sure there are at least this many connections
@@ -96,7 +74,7 @@ func main() {
 	results := make(chan string, *messageCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go worker(w, jobs, results, client, *maxlen, *streamPrefix)
+		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix)
 	}
 
 	for j := 0; j <= *messageCount-1; j++ {
