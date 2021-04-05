@@ -12,14 +12,15 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string) {
+func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string, msgsize int) {
 	log.Printf("Starting writer worker: %d\n", id)
+	msg := utils.RandStringBytesMaskImprSrcSB(msgsize)
 	for j := range jobs {
 		id, err := redisClient.XAdd(ctx,
 			&redis.XAddArgs{
 				Stream: fmt.Sprintf("%s-%d", streamPrefix, id),
 				MaxLen: int64(maxlen),
-				Values: map[string]interface{}{"job": id, "message": j},
+				Values: map[string]interface{}{"job": j, "message": msg},
 			}).Result()
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
@@ -42,6 +43,7 @@ func main() {
 	messageCount := getopt.IntLong("message-count", 'c', 100000, "run this man times")
 	maxlen := getopt.IntLong("max-length", 'l', 0, "the capped length of a queue")
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
+	msgsize := getopt.IntLong("msg-size", 'm', 1, "number of bytes in the stream message field")
 
 	getopt.Parse()
 
@@ -72,7 +74,7 @@ func main() {
 	results := make(chan string, *messageCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix)
+		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix, *msgsize)
 	}
 
 	for j := 0; j <= *messageCount-1; j++ {
