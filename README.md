@@ -9,6 +9,7 @@ This builds binaries to run stream benchmarking similar to memtier_benchmark.
 - writes messages to either a single or multiple streams
 - allows users to set a payload size
 - will spread the load over several Redis Enterprise proxies
+- allows pipelining of commands
 
 #### slam-reader
 
@@ -40,7 +41,7 @@ Usage: slam-reader [-fhr] [-a value] [-b value] [-c value] [-p value] [-s value]
 
 ```
 $ ./slam-writer -h
-Usage: slam-writer [-fh] [-a value] [-c value] [-l value] [-m value] [-p value] [-s value] [-t value] [-x value] [parameters ...]
+Usage: slam-writer [-fh] [-a value] [-c value] [-l value] [-m value] [-p value] [-q value] [-s value] [-t value] [-x value] [parameters ...]
  -a, --password=value
                    Redis Password
  -c, --message-count=value
@@ -52,12 +53,13 @@ Usage: slam-writer [-fh] [-a value] [-c value] [-l value] [-m value] [-p value] 
  -m, --msg-size=value
                    number of bytes in the stream message field [1]
  -p, --port=value  Redis Port [6379]
+ -q, --pipeline=value
+                   Pipeline size [1]
  -s, --host=value  Redis Host [localhost]
  -t, --threads=value
                    run this many threads [1]
  -x, --stream-prefix=value
                    the prefix of the streams created [stream-slam]
-
 ```
 
 ### Example run to benchmark a single shard

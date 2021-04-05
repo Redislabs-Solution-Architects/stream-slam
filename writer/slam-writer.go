@@ -12,15 +12,17 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string, msgsize int, focus bool) {
+func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string, msgsize int, focus bool, pipesize int) {
 	log.Printf("Starting writer worker: %d\n", id)
 	sid := id
 	if focus {
 		sid = 1
 	}
+	pipe := redisClient.Pipeline()
+	p := 0
 	msg := utils.RandStringBytesMaskImprSrcSB(msgsize)
 	for j := range jobs {
-		id, err := redisClient.XAdd(ctx,
+		id, err := pipe.XAdd(ctx,
 			&redis.XAddArgs{
 				Stream: fmt.Sprintf("%s-%d", streamPrefix, sid),
 				MaxLen: int64(maxlen),
@@ -30,6 +32,17 @@ func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string,
 			log.Printf("ERROR: %s\n", err)
 		}
 		results <- id
+		p += 1
+		if p%pipesize == 0 {
+			_, pipeerr := pipe.Exec(ctx)
+			if pipeerr != nil {
+				log.Printf("ERROR flushing pipeline at %d end: %s\n", p, pipeerr)
+			}
+		}
+	}
+	_, finalerr := pipe.Exec(ctx)
+	if finalerr != nil {
+		log.Printf("ERROR flushing pipeline at end: %s\n", finalerr)
 	}
 }
 
@@ -49,6 +62,7 @@ func main() {
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
 	msgsize := getopt.IntLong("msg-size", 'm', 1, "number of bytes in the stream message field")
 	focus := getopt.BoolLong("focus", 'f', "Only write to a single stream")
+	pipesize := getopt.IntLong("pipeline", 'q', 1, "Pipeline size")
 
 	getopt.Parse()
 
@@ -79,7 +93,7 @@ func main() {
 	results := make(chan string, *messageCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix, *msgsize, *focus)
+		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix, *msgsize, *focus, *pipesize)
 	}
 
 	for j := 0; j <= *messageCount-1; j++ {
