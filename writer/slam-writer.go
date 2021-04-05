@@ -38,7 +38,7 @@ func main() {
 	redisPassword := getopt.StringLong("password", 'a', "", "Redis Password")
 	streamPrefix := getopt.StringLong("stream-prefix", 'x', "stream-slam", "the prefix of the streams created")
 
-	redisPort := getopt.StringLong("port", 'p', "6379", "Redis Port")
+	redisPort := getopt.IntLong("port", 'p', 6379, "Redis Port")
 	messageCount := getopt.IntLong("message-count", 'c', 100000, "run this man times")
 	maxlen := getopt.IntLong("max-length", 'l', 0, "the capped length of a queue")
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
@@ -50,9 +50,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx = context.WithValue(ctx, "host", *redisHost)
-	ctx = context.WithValue(ctx, "port", *redisPort)
-
 	if *maxlen == 0 {
 		// throw in an extra 10 for good measure
 		*maxlen = *messageCount/(*threadCount) + 10
@@ -60,9 +57,10 @@ func main() {
 
 	client := redis.NewClient(&redis.Options{
 		Dialer:          utils.RandomDialer, // Randomly pick an IP address from the list of ips retruned
+		Addr:            fmt.Sprintf("%s:%d", *redisHost, *redisPort),
 		Password:        *redisPassword,
 		DB:              0,
-		MinIdleConns:    1,                    // make sure there are at least this many connections
+		MinIdleConns:    5,                    // make sure there are at least this many connections
 		MinRetryBackoff: 8 * time.Millisecond, //minimum amount of time to try and backupf
 		MaxRetryBackoff: 5000 * time.Millisecond,
 		MaxConnAge:      0,  //3 * time.Second this will cause everyone to reconnect every 3 seconds - 0 is keep open forever

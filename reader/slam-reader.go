@@ -58,7 +58,7 @@ func main() {
 	redisPassword := getopt.StringLong("password", 'a', "", "Redis Password")
 	streamPrefix := getopt.StringLong("stream-prefix", 'x', "stream-slam", "the prefix of the streams created")
 
-	redisPort := getopt.StringLong("port", 'p', "6379", "Redis Port")
+	redisPort := getopt.IntLong("port", 'p', 6379, "Redis Port")
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
 
 	getopt.Parse()
@@ -76,6 +76,7 @@ func main() {
 	client := redis.NewClient(&redis.Options{
 		Dialer:          utils.RandomDialer, // Randomly pick an IP address from the list of ips retruned
 		Password:        *redisPassword,
+		Addr:            fmt.Sprintf("%s:%d", *redisHost, *redisPort),
 		DB:              0,
 		MinIdleConns:    1,                    // make sure there are at least this many connections
 		MinRetryBackoff: 8 * time.Millisecond, //minimum amount of time to try and backupf
