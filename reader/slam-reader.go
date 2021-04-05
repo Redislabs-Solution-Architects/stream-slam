@@ -13,20 +13,24 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string, whack bool, count int64, blockms int) {
+func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string, whack bool, count int64, blockms int, focus bool) {
 	log.Printf("Starting worker: %d", id)
+	sid := id
+	if focus {
+		sid = 1
+	}
 
 	// Try to create a read group and it will fail if already present
 	redisClient.XGroupCreateMkStream(
 		ctx,
-		fmt.Sprintf("%s-%d", streamPrefix, id),
+		fmt.Sprintf("%s-%d", streamPrefix, sid),
 		fmt.Sprintf("Group-%s", streamPrefix), "0").Err()
 
 	for {
 		res, _ := redisClient.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    fmt.Sprintf("Group-%s", streamPrefix),
 			Consumer: fmt.Sprintf("Consumer-%s-%d", streamPrefix, id),
-			Streams:  []string{fmt.Sprintf("%s-%d", streamPrefix, id), ">"},
+			Streams:  []string{fmt.Sprintf("%s-%d", streamPrefix, sid), ">"},
 			Count:    count,
 			Block:    time.Duration(blockms) * time.Second,
 		}).Result()
@@ -34,24 +38,24 @@ func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPr
 			for _, y := range x.Messages {
 				if whack {
 					_, errdel := redisClient.XDel(
-						ctx, fmt.Sprintf("%s-%d", streamPrefix, id),
+						ctx, fmt.Sprintf("%s-%d", streamPrefix, sid),
 						y.ID).Result()
 					if errdel != nil {
 						log.Printf(
 							"%s: Unable to DEL message: %s %s ",
-							fmt.Sprintf("%s-%d", streamPrefix, id),
+							fmt.Sprintf("%s-%d", streamPrefix, sid),
 							y.ID,
 							errdel)
 					}
 				} else {
 					_, errack := redisClient.XAck(
-						ctx, fmt.Sprintf("%s-%d", streamPrefix, id),
+						ctx, fmt.Sprintf("%s-%d", streamPrefix, sid),
 						fmt.Sprintf("Group-%s", streamPrefix),
 						y.ID).Result()
 					if errack != nil {
 						log.Printf(
 							"%s: Unable to ack message: %s %s ",
-							fmt.Sprintf("%s-%d", streamPrefix, id),
+							fmt.Sprintf("%s-%d", streamPrefix, sid),
 							y.ID,
 							errack)
 					}
@@ -77,6 +81,8 @@ func main() {
 
 	count := getopt.Int64Long("count", 'c', 1, "Number of messages to read at a time")
 	blockms := getopt.IntLong("block", 'b', 100, "ms to sleep on read")
+
+	focus := getopt.BoolLong("focus", 'f', "Only write to a single stream")
 
 	getopt.Parse()
 
@@ -106,7 +112,7 @@ func main() {
 	wg.Add(*threadCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go workerRead(w, ctx, client, *streamPrefix, *whack, *count, *blockms)
+		go workerRead(w, ctx, client, *streamPrefix, *whack, *count, *blockms, *focus)
 	}
 	wg.Wait()
 

@@ -12,15 +12,19 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string, msgsize int) {
+func worker(id int, ctx context.Context, jobs <-chan int, results chan<- string, redisClient *redis.Client, maxlen int, streamPrefix string, msgsize int, focus bool) {
 	log.Printf("Starting writer worker: %d\n", id)
+	sid := id
+	if focus {
+		sid = 1
+	}
 	msg := utils.RandStringBytesMaskImprSrcSB(msgsize)
 	for j := range jobs {
 		id, err := redisClient.XAdd(ctx,
 			&redis.XAddArgs{
-				Stream: fmt.Sprintf("%s-%d", streamPrefix, id),
+				Stream: fmt.Sprintf("%s-%d", streamPrefix, sid),
 				MaxLen: int64(maxlen),
-				Values: map[string]interface{}{"job": j, "message": msg},
+				Values: map[string]interface{}{"job": j, "message": msg, "thread": id},
 			}).Result()
 		if err != nil {
 			log.Printf("ERROR: %s\n", err)
@@ -44,6 +48,7 @@ func main() {
 	maxlen := getopt.IntLong("max-length", 'l', 0, "the capped length of a queue")
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
 	msgsize := getopt.IntLong("msg-size", 'm', 1, "number of bytes in the stream message field")
+	focus := getopt.BoolLong("focus", 'f', "Only write to a single stream")
 
 	getopt.Parse()
 
@@ -74,7 +79,7 @@ func main() {
 	results := make(chan string, *messageCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix, *msgsize)
+		go worker(w, ctx, jobs, results, client, *maxlen, *streamPrefix, *msgsize, *focus)
 	}
 
 	for j := 0; j <= *messageCount-1; j++ {
