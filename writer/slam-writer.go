@@ -52,7 +52,7 @@ func main() {
 
 	helpFlag := getopt.BoolLong("help", 'h', "display help")
 
-	redisHost := getopt.StringLong("host", 's', "localhost", "Redis Host")
+	redisHost := getopt.StringLong("host", 's', "127.0.0.1", "Redis Host")
 	redisPassword := getopt.StringLong("password", 'a', "", "Redis Password")
 	streamPrefix := getopt.StringLong("stream-prefix", 'x', "stream-slam", "the prefix of the streams created")
 
