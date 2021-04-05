@@ -13,7 +13,7 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string) {
+func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string, whack bool) {
 	log.Printf("Starting worker: %d", id)
 
 	// Try to create a read group and it will fail if already present
@@ -32,16 +32,29 @@ func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPr
 		}).Result()
 		for _, x := range res {
 			for _, y := range x.Messages {
-				_, errack := redisClient.XAck(
-					ctx, fmt.Sprintf("%s-%d", streamPrefix, id),
-					fmt.Sprintf("Group-%s", streamPrefix),
-					y.ID).Result()
-				if errack != nil {
-					log.Printf(
-						"%s: Unable to ack message: %s %s ",
-						fmt.Sprintf("%s-%d", streamPrefix, id),
-						y.ID,
-						errack)
+				if whack {
+					_, errdel := redisClient.XDel(
+						ctx, fmt.Sprintf("%s-%d", streamPrefix, id),
+						y.ID).Result()
+					if errdel != nil {
+						log.Printf(
+							"%s: Unable to DEL message: %s %s ",
+							fmt.Sprintf("%s-%d", streamPrefix, id),
+							y.ID,
+							errdel)
+					}
+				} else {
+					_, errack := redisClient.XAck(
+						ctx, fmt.Sprintf("%s-%d", streamPrefix, id),
+						fmt.Sprintf("Group-%s", streamPrefix),
+						y.ID).Result()
+					if errack != nil {
+						log.Printf(
+							"%s: Unable to ack message: %s %s ",
+							fmt.Sprintf("%s-%d", streamPrefix, id),
+							y.ID,
+							errack)
+					}
 				}
 			}
 		}
@@ -60,6 +73,7 @@ func main() {
 
 	redisPort := getopt.IntLong("port", 'p', 6379, "Redis Port")
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
+	whack := getopt.BoolLong("delete-from-stream", 'r', "delete messages from stream")
 
 	getopt.Parse()
 
@@ -89,7 +103,7 @@ func main() {
 	wg.Add(*threadCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go workerRead(w, ctx, client, *streamPrefix)
+		go workerRead(w, ctx, client, *streamPrefix, *whack)
 	}
 	wg.Wait()
 
