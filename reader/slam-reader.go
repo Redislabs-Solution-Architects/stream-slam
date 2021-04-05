@@ -13,7 +13,7 @@ import (
 	"github.com/pborman/getopt/v2"
 )
 
-func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string, whack bool) {
+func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPrefix string, whack bool, count int64, blockms int) {
 	log.Printf("Starting worker: %d", id)
 
 	// Try to create a read group and it will fail if already present
@@ -27,8 +27,8 @@ func workerRead(id int, ctx context.Context, redisClient *redis.Client, streamPr
 			Group:    fmt.Sprintf("Group-%s", streamPrefix),
 			Consumer: fmt.Sprintf("Consumer-%s-%d", streamPrefix, id),
 			Streams:  []string{fmt.Sprintf("%s-%d", streamPrefix, id), ">"},
-			Count:    1,
-			Block:    1 * time.Second,
+			Count:    count,
+			Block:    time.Duration(blockms) * time.Second,
 		}).Result()
 		for _, x := range res {
 			for _, y := range x.Messages {
@@ -75,6 +75,9 @@ func main() {
 	threadCount := getopt.IntLong("threads", 't', 1, "run this many threads")
 	whack := getopt.BoolLong("delete-from-stream", 'r', "delete messages from stream")
 
+	count := getopt.Int64Long("count", 'c', 1, "Number of messages to read at a time")
+	blockms := getopt.IntLong("block", 'b', 100, "ms to sleep on read")
+
 	getopt.Parse()
 
 	if *helpFlag {
@@ -103,7 +106,7 @@ func main() {
 	wg.Add(*threadCount)
 
 	for w := 1; w <= *threadCount; w++ {
-		go workerRead(w, ctx, client, *streamPrefix, *whack)
+		go workerRead(w, ctx, client, *streamPrefix, *whack, *count, *blockms)
 	}
 	wg.Wait()
 
